@@ -1,0 +1,37 @@
+const assert=require('node:assert/strict');
+const E=require('../web/legacy/engine.js');
+const demo=E.demo();
+assert.equal(E.validate(demo).errors.length,0);
+assert.equal(new Set(demo.map(r=>r.student_id)).size,120);
+assert.equal(E.aggregate(demo).length,6);
+const round=E.validate(E.parseCSV(E.csv(demo)));
+assert.equal(round.errors.length,0);
+assert.deepEqual(round.rows,demo);
+assert.throws(()=>E.parseCSV('student_id\n"oops'),/кавычка/);
+const duplicate=E.validate([...demo,demo[0]]);
+assert(duplicate.errors.some(x=>x.includes('повтор')));
+assert(E.validate([{...demo[0],score:11}]).errors.length);
+assert(E.validate([{...demo[0],score:''}]).errors.length);
+assert(E.csv([{x:'=IMPORTXML("x")'}],['x']).includes("'=IMPORTXML"));
+const ts=E.aggregate(demo);
+for(let target=1;target<=95;target++)for(let min=1;min<=8;min++)for(let cap=0;cap<=4;cap++){
+ const p=E.makePlan(ts,{target,min,cap});
+ assert.equal(p.reduce((s,t)=>s+t.hours,0),p.reduce((s,t)=>s+t.proposed,0));
+ p.forEach(t=>{assert(Math.abs(t.proposed-t.hours)<=cap);assert(t.proposed>=Math.min(min,t.hours));});
+}
+const small=E.makePlan(E.aggregate(demo.filter(r=>['S001','S002'].includes(r.student_id))));
+assert(small.every(t=>t.hours===t.proposed));
+const preOnly=E.makePlan(E.aggregate(demo.filter(r=>r.phase==='pre')));
+assert(preOnly.every(t=>t.hours===t.proposed));
+const rows=[{...demo[0],student_id:'A',phase:'pre',score:2},{...demo[0],student_id:'A',phase:'post',score:7},{...demo[0],student_id:'B',phase:'post',score:10}];
+const t=E.aggregate(rows)[0];
+assert.equal(t.gain,50);assert.equal(t.paired,1);assert.equal(t.post,85);
+const quoted=E.parseCSV(E.csv([{...demo[0],topic:'Дроби, "часть"\nи числа'}]));
+assert.equal(quoted[0].topic,'Дроби, "часть"\nи числа');
+console.log('Passed: CSV validation/roundtrip, paired gains, missing data, small samples, 3800 allocation constraint combinations.');
+const incomplete=E.aggregate(demo.filter(r=>!(r.student_id==='S001'&&r.topic==='Обыкновенные дроби'&&r.phase==='post'&&r.question_id==='T0Q0')));
+assert.equal(incomplete.find(t=>t.name==='Обыкновенные дроби').incomplete,1);
+const pIncomplete=E.makePlan(incomplete);
+assert.equal(pIncomplete.find(t=>t.name==='Обыкновенные дроби').proposed,4);
+assert(E.makePlan(ts,{min:5}).every(t=>t.proposed===t.hours));
+console.log('Passed: incomplete-test exclusion and incompatible-minimum guard.');

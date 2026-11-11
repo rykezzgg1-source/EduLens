@@ -1,0 +1,31 @@
+const assert=require('node:assert/strict');
+const W=require('../web/legacy/workspace.js'),E=require('../web/legacy/engine.js');
+for(const [type,max] of [['school',11],['college',3],['university',4]]){
+ for(let level=1;level<=max;level++)assert.deepEqual(W.checkProfile(W.profile({type,level})),[]);
+ assert(W.checkProfile(W.profile({type,level:0})).length);
+ assert(W.checkProfile(W.profile({type,level:max+1})).length);
+ assert(W.checkProfile(W.profile({type,level:1.5})).length);
+}
+assert(W.checkProfile(W.profile({type:'__proto__'})).length);
+assert(W.checkProfile(W.profile({subject:'  '})).length);
+const a=W.profile({type:'university',level:4,subject:'Программирование'});
+const b=W.profile({type:'college',level:3,subject:'Физика'});
+const legacy=E.demo().slice(0,1);
+const original=W.stamp(legacy,W.defaults);
+const imported=W.prepareImport(legacy,a);
+assert.equal(imported.errors.length,0);assert(W.matches(imported.rows[0],a));
+const wrong=W.prepareImport(original,a);assert(wrong.errors.length);
+const invalid=W.prepareImport([{...legacy[0],institution_type:'college',level:4}],a);assert(invalid.errors.length);
+const sameIdOtherContext=W.stamp([{...legacy[0],hours:7,textbook:'Другой материал',class:'Группа B'}],b);
+const merged=W.merge(original,imported.rows,a,'replace');
+assert.equal(merged.length,2);assert.deepEqual(merged[0],original[0]);
+const replaced=W.merge(merged,[{...imported.rows[0],score:9}],a,'replace');
+assert.equal(replaced.length,2);assert.equal(replaced[0].score,original[0].score);assert.equal(replaced[1].score,9);
+const kept=E.validate([...original,...imported.rows,...sameIdOtherContext]);
+assert.equal(kept.errors.length,0);assert.equal(kept.rows.length,3);
+assert.equal(kept.rows.filter(r=>W.matches(r,a)).length,1);
+assert(E.validate(W.merge(merged,imported.rows,a,'append')).errors.some(e=>e.includes('повтор')));
+assert.equal(E.validate([{...original[0],demo:true}]).rows[0].demo,true);
+const headers=[...E.columns,...W.extra];
+assert.deepEqual(E.validate(E.parseCSV(E.csv(kept.rows,headers))).rows,kept.rows);
+console.log('Passed: all institution ranges, invalid profiles, context isolation, legacy import, metadata mismatch, scoped replacement, duplicate protection, extended CSV roundtrip.');
